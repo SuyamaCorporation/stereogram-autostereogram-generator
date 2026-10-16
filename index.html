@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Autostereogram Random Dot 3D Generator</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  canvas { image-rendering: pixelated; }
+  input[type=range] { accent-color: #22c55e; }
+  .depth-btn.active { outline: 2px solid #22c55e; outline-offset: 2px; }
+</style>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen flex flex-col items-center p-4">
+<h1 class="text-2xl font-bold text-green-400 mb-1">Autostereogram (Magic Eye) Generator</h1>
+<p class="text-gray-400 text-sm mb-4">深度マップからランダムドットステレオグラム (SIRDS) を生成</p>
+
+<div class="flex flex-col xl:flex-row gap-6 w-full max-w-6xl">
+  <!-- Main area -->
+  <div class="flex flex-col gap-4 flex-1">
+    <!-- Stereogram output -->
+    <div>
+      <h2 class="text-green-300 text-sm font-semibold mb-1">ステレオグラム出力 (600×300px)</h2>
+      <canvas id="stereoCanvas" width="600" height="300"
+        class="border border-gray-600 rounded w-full max-w-2xl"
+        aria-label="生成されたオートステレオグラム"></canvas>
+    </div>
+    <!-- Depth map preview -->
+    <div>
+      <h2 class="text-green-300 text-sm font-semibold mb-1">深度マップ (描画可能)</h2>
+      <canvas id="depthCanvas" width="600" height="300"
+        class="border border-gray-600 rounded w-full max-w-2xl cursor-crosshair"
+        aria-label="深度マップキャンバス。クリック/ドラッグで描画可能"></canvas>
+    </div>
+  </div>
+
+  <!-- Controls -->
+  <div class="flex flex-col gap-3" style="min-width:240px">
+    <!-- Depth shapes -->
+    <div class="bg-gray-800 rounded-lg p-4">
+      <h2 class="text-green-300 font-semibold mb-3">深度マップ形状</h2>
+      <div class="grid grid-cols-2 gap-2">
+        <button class="depth-btn active bg-gray-700 hover:bg-gray-600 py-2 px-2 rounded text-sm" data-shape="sphere" aria-label="球体深度マップ">球体</button>
+        <button class="depth-btn bg-gray-700 hover:bg-gray-600 py-2 px-2 rounded text-sm" data-shape="pyramid" aria-label="ピラミッド深度マップ">ピラミッド</button>
+        <button class="depth-btn bg-gray-700 hover:bg-gray-600 py-2 px-2 rounded text-sm" data-shape="text3d" aria-label="3Dテキスト深度マップ">「3D」文字</button>
+        <button class="depth-btn bg-gray-700 hover:bg-gray-600 py-2 px-2 rounded text-sm" data-shape="star" aria-label="星形深度マップ">星形</button>
+        <button class="depth-btn bg-gray-700 hover:bg-gray-600 py-2 px-2 rounded text-sm col-span-2" data-shape="custom" aria-label="カスタム描画モード">✏️ カスタム描画</button>
+      </div>
+      <div id="customTools" class="hidden mt-2">
+        <label class="block text-xs mb-1">深度強度: <span id="paintDepthVal" class="text-yellow-300">1.0</span></label>
+        <input type="range" id="paintDepth" min="0" max="1" step="0.1" value="1.0" class="w-full" aria-label="描画深度値">
+        <label class="block text-xs mt-2 mb-1">ブラシサイズ: <span id="paintBrushVal" class="text-yellow-300">20</span></label>
+        <input type="range" id="paintBrush" min="5" max="60" step="5" value="20" class="w-full" aria-label="ブラシサイズ">
+        <button id="clearDepth" class="w-full mt-2 bg-red-900 hover:bg-red-800 text-red-200 py-1 rounded text-xs" aria-label="深度マップをクリア">深度マップをクリア</button>
+      </div>
+    </div>
+
+    <!-- Stereogram params -->
+    <div class="bg-gray-800 rounded-lg p-4">
+      <h2 class="text-green-300 font-semibold mb-3">ステレオグラム設定</h2>
+
+      <label class="block text-sm mb-1">パターン幅: <span id="patWidthVal" class="text-yellow-300">100</span>px</label>
+      <input type="range" id="patWidth" min="50" max="200" step="10" value="100" class="w-full mb-3" aria-label="パターン幅">
+
+      <label class="block text-sm mb-1">最大シフト量: <span id="maxShiftVal" class="text-yellow-300">25</span>px</label>
+      <input type="range" id="maxShift" min="10" max="40" step="1" value="25" class="w-full mb-3" aria-label="最大シフト量">
+
+      <label class="block text-sm mb-1">ドットサイズ: <span id="dotSizeVal" class="text-yellow-300">1</span>px</label>
+      <input type="range" id="dotSize" min="1" max="4" step="1" value="1" class="w-full mb-3" aria-label="ドットサイズ">
+
+      <label class="flex items-center gap-2 cursor-pointer mb-3">
+        <input type="checkbox" id="colorMode" class="accent-green-400" aria-label="カラーモード">
+        <span class="text-sm">カラーモード (グレースケール=OFF)</span>
+      </label>
+
+      <button id="regenBtn"
+        class="w-full bg-green-700 hover:bg-green-600 text-white py-2 px-4 rounded font-semibold mb-2 transition-colors"
+        aria-label="同じ深度マップで新しいランダムドットを生成">
+        ドット再生成
+      </button>
+      <button id="saveBtn"
+        class="w-full bg-gray-700 hover:bg-gray-600 text-white py-2 px-3 rounded text-sm transition-colors"
+        aria-label="ステレオグラムをPNGで保存">
+        PNG 保存
+      </button>
+    </div>
+
+    <!-- Viewing instructions -->
+    <div class="bg-gray-800 rounded-lg p-4 text-xs text-gray-300">
+      <h2 class="text-green-300 font-semibold mb-2 text-sm">立体視の方法</h2>
+      <div class="space-y-2 text-gray-400">
+        <div>
+          <span class="text-yellow-300 font-semibold">平行法（遠視）:</span>
+          <p>画像の後ろに焦点を合わせるように目をリラックスさせ、無限遠を見るように視線を平行に。</p>
+        </div>
+        <div>
+          <span class="text-yellow-300 font-semibold">交差法（近視）:</span>
+          <p>画面の手前に焦点を合わせ、両目の視線を交差させる。</p>
+        </div>
+        <div class="text-green-400">
+          白い部分が手前、黒が奥に浮かび上がります。
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const SW = 600, SH = 300;
+
+const stereoCanvas = document.getElementById('stereoCanvas');
+const stereoCtx = stereoCanvas.getContext('2d');
+const depthCanvas = document.getElementById('depthCanvas');
+const depthCtx = depthCanvas.getContext('2d');
+
+let depthMap = new Float32Array(SW * SH);
+let randomPattern = null;
+let patWidth = 100;
+let maxShift = 25;
+let dotSize = 1;
+let colorMode = false;
+let currentShape = 'sphere';
+let isDrawing = false;
+let paintDepth = 1.0;
+let paintBrush = 20;
+
+// Generate depth map shapes
+function genSphere() {
+  const cx = SW / 2, cy = SH / 2, r = Math.min(SW, SH) * 0.35;
+  for (let y = 0; y < SH; y++) {
+    for (let x = 0; x < SW; x++) {
+      const d = Math.sqrt((x - cx) ** 2 + (y - cy) ** 2);
+      depthMap[y * SW + x] = Math.max(0, 1 - (d / r) ** 2);
+    }
+  }
+}
+
+function genPyramid() {
+  const cx = SW / 2, cy = SH / 2;
+  const rx = SW * 0.35, ry = SH * 0.35;
+  for (let y = 0; y < SH; y++) {
+    for (let x = 0; x < SW; x++) {
+      const nx = Math.abs(x - cx) / rx;
+      const ny = Math.abs(y - cy) / ry;
+      depthMap[y * SW + x] = Math.max(0, 1 - Math.max(nx, ny));
+    }
+  }
+}
+
+function genText3D() {
+  depthMap.fill(0);
+  const offscreen = new OffscreenCanvas(SW, SH);
+  const oCtx = offscreen.getContext('2d');
+  oCtx.fillStyle = 'black';
+  oCtx.fillRect(0, 0, SW, SH);
+  oCtx.fillStyle = 'white';
+  oCtx.font = `bold ${SH * 0.7}px Arial`;
+  oCtx.textAlign = 'center';
+  oCtx.textBaseline = 'middle';
+  oCtx.fillText('3D', SW / 2, SH / 2);
+  const pxData = oCtx.getImageData(0, 0, SW, SH).data;
+  for (let i = 0; i < SW * SH; i++) {
+    depthMap[i] = pxData[i * 4] / 255;
+  }
+}
+
+function genStar() {
+  const cx = SW / 2, cy = SH / 2;
+  const outerR = Math.min(SW, SH) * 0.38;
+  const innerR = outerR * 0.4;
+  const points = 5;
+  for (let y = 0; y < SH; y++) {
+    for (let x = 0; x < SW; x++) {
+      const dx = x - cx, dy = y - cy;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const angle = Math.atan2(dy, dx);
+      // Star boundary at this angle
+      const segAngle = (Math.PI * 2) / (points * 2);
+      const rot = angle / segAngle;
+      const frac = rot - Math.floor(rot);
+      const rBound = frac < 0.5
+        ? outerR * (1 - frac * 2) + innerR * frac * 2
+        : innerR * (1 - (frac - 0.5) * 2) + outerR * (frac - 0.5) * 2;
+      depthMap[y * SW + x] = dist < rBound ? Math.max(0, 1 - dist / rBound) : 0;
+    }
+  }
+}
+
+function generatePattern() {
+  randomPattern = new Uint8ClampedArray(patWidth * SH * 4);
+  for (let y = 0; y < SH; y += dotSize) {
+    for (let x = 0; x < patWidth; x += dotSize) {
+      let r, g, b;
+      if (colorMode) {
+        r = Math.floor(Math.random() * 256);
+        g = Math.floor(Math.random() * 256);
+        b = Math.floor(Math.random() * 256);
+      } else {
+        const v = Math.floor(Math.random() * 256);
+        r = g = b = v;
+      }
+      for (let dy = 0; dy < dotSize && y + dy < SH; dy++) {
+        for (let dx = 0; dx < dotSize && x + dx < patWidth; dx++) {
+          const idx = ((y + dy) * patWidth + (x + dx)) * 4;
+          randomPattern[idx] = r;
+          randomPattern[idx + 1] = g;
+          randomPattern[idx + 2] = b;
+          randomPattern[idx + 3] = 255;
+        }
+      }
+    }
+  }
+}
+
+function generateStereogram() {
+  const imgData = stereoCtx.createImageData(SW, SH);
+  const pix = imgData.data;
+
+  // same[] array: for each pixel, stores what source pixel it maps to
+  const same = new Int32Array(SW);
+
+  for (let y = 0; y < SH; y++) {
+    // Reset
+    for (let x = 0; x < SW; x++) same[x] = x;
+
+    // Link pixels based on depth (SIRDS algorithm)
+    for (let x = 0; x < SW; x++) {
+      const depth = depthMap[y * SW + x];
+      const shift = Math.round(depth * maxShift);
+      if (shift === 0) continue;
+      const left = x - patWidth + shift;
+      const right = x;
+      if (left >= 0 && right < SW) {
+        // Link: same[right] = left means right pixel should match left
+        let s = right;
+        while (same[s] !== s) s = same[s];
+        same[s] = left;
+      }
+    }
+
+    // Assign colors
+    const color = new Uint8ClampedArray(SW * 4);
+    const colored = new Uint8Array(SW);
+
+    // Walk from left to right, fill in colors
+    for (let x = 0; x < SW; x++) {
+      let s = x;
+      while (same[s] !== s) s = same[s];
+
+      if (s < patWidth) {
+        // Use pattern
+        const pi = (y * patWidth + (s % patWidth)) * 4;
+        color[x * 4] = randomPattern[pi];
+        color[x * 4 + 1] = randomPattern[pi + 1];
+        color[x * 4 + 2] = randomPattern[pi + 2];
+        color[x * 4 + 3] = 255;
+      } else if (colored[s]) {
+        color[x * 4] = color[s * 4];
+        color[x * 4 + 1] = color[s * 4 + 1];
+        color[x * 4 + 2] = color[s * 4 + 2];
+        color[x * 4 + 3] = 255;
+      } else {
+        // Use pattern based on x position
+        const patX = ((x % patWidth) + patWidth) % patWidth;
+        const pi = (y * patWidth + patX) * 4;
+        color[x * 4] = randomPattern[pi];
+        color[x * 4 + 1] = randomPattern[pi + 1];
+        color[x * 4 + 2] = randomPattern[pi + 2];
+        color[x * 4 + 3] = 255;
+      }
+      colored[x] = 1;
+
+      const idx = (y * SW + x) * 4;
+      pix[idx] = color[x * 4];
+      pix[idx + 1] = color[x * 4 + 1];
+      pix[idx + 2] = color[x * 4 + 2];
+      pix[idx + 3] = 255;
+    }
+  }
+  stereoCtx.putImageData(imgData, 0, 0);
+}
+
+function renderDepthMap() {
+  const imgData = depthCtx.createImageData(SW, SH);
+  for (let i = 0; i < SW * SH; i++) {
+    const v = Math.floor(depthMap[i] * 255);
+    imgData.data[i * 4] = v;
+    imgData.data[i * 4 + 1] = v;
+    imgData.data[i * 4 + 2] = v;
+    imgData.data[i * 4 + 3] = 255;
+  }
+  depthCtx.putImageData(imgData, 0, 0);
+}
+
+function rebuild() {
+  generatePattern();
+  generateStereogram();
+}
+
+function loadShape(shape) {
+  currentShape = shape;
+  depthMap.fill(0);
+  if (shape === 'sphere') genSphere();
+  else if (shape === 'pyramid') genPyramid();
+  else if (shape === 'text3d') genText3D();
+  else if (shape === 'star') genStar();
+  renderDepthMap();
+  rebuild();
+  document.getElementById('customTools').classList.toggle('hidden', shape !== 'custom');
+}
+
+// Shape buttons
+document.querySelectorAll('.depth-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.depth-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    loadShape(btn.dataset.shape);
+  });
+});
+
+// Custom drawing on depth map
+function getDepthPos(e) {
+  const rect = depthCanvas.getBoundingClientRect();
+  return {
+    x: Math.floor((e.clientX - rect.left) / rect.width * SW),
+    y: Math.floor((e.clientY - rect.top) / rect.height * SH)
+  };
+}
+
+function paintDepthAt(x, y) {
+  const r = paintBrush;
+  for (let dy = -r; dy <= r; dy++) {
+    for (let dx = -r; dx <= r; dx++) {
+      if (dx * dx + dy * dy > r * r) continue;
+      const nx = x + dx, ny = y + dy;
+      if (nx < 0 || nx >= SW || ny < 0 || ny >= SH) continue;
+      const falloff = 1 - Math.sqrt(dx * dx + dy * dy) / r;
+      depthMap[ny * SW + nx] = Math.min(1, depthMap[ny * SW + nx] + paintDepth * falloff * 0.3);
+    }
+  }
+}
+
+depthCanvas.addEventListener('mousedown', e => {
+  if (currentShape !== 'custom') return;
+  isDrawing = true;
+  const p = getDepthPos(e); paintDepthAt(p.x, p.y);
+  renderDepthMap(); rebuild();
+});
+depthCanvas.addEventListener('mousemove', e => {
+  if (!isDrawing || currentShape !== 'custom') return;
+  const p = getDepthPos(e); paintDepthAt(p.x, p.y);
+  renderDepthMap(); rebuild();
+});
+depthCanvas.addEventListener('mouseup', () => { isDrawing = false; });
+depthCanvas.addEventListener('mouseleave', () => { isDrawing = false; });
+
+// Touch
+depthCanvas.addEventListener('touchstart', e => {
+  e.preventDefault(); if (currentShape !== 'custom') return;
+  isDrawing = true; const p = getDepthPos(e.touches[0]); paintDepthAt(p.x, p.y);
+  renderDepthMap(); rebuild();
+});
+depthCanvas.addEventListener('touchmove', e => {
+  e.preventDefault(); if (!isDrawing) return;
+  const p = getDepthPos(e.touches[0]); paintDepthAt(p.x, p.y);
+  renderDepthMap(); rebuild();
+});
+depthCanvas.addEventListener('touchend', () => { isDrawing = false; });
+
+// Control events
+document.getElementById('patWidth').addEventListener('input', e => {
+  patWidth = parseInt(e.target.value);
+  document.getElementById('patWidthVal').textContent = patWidth;
+  rebuild();
+});
+document.getElementById('maxShift').addEventListener('input', e => {
+  maxShift = parseInt(e.target.value);
+  document.getElementById('maxShiftVal').textContent = maxShift;
+  rebuild();
+});
+document.getElementById('dotSize').addEventListener('input', e => {
+  dotSize = parseInt(e.target.value);
+  document.getElementById('dotSizeVal').textContent = dotSize;
+  rebuild();
+});
+document.getElementById('colorMode').addEventListener('change', e => {
+  colorMode = e.target.checked;
+  rebuild();
+});
+document.getElementById('regenBtn').addEventListener('click', () => {
+  generatePattern();
+  generateStereogram();
+});
+document.getElementById('saveBtn').addEventListener('click', () => {
+  const a = document.createElement('a');
+  a.download = 'stereogram.png';
+  a.href = stereoCanvas.toDataURL('image/png');
+  a.click();
+});
+document.getElementById('clearDepth').addEventListener('click', () => {
+  depthMap.fill(0);
+  renderDepthMap();
+  rebuild();
+});
+document.getElementById('paintDepth').addEventListener('input', e => {
+  paintDepth = parseFloat(e.target.value);
+  document.getElementById('paintDepthVal').textContent = paintDepth.toFixed(1);
+});
+document.getElementById('paintBrush').addEventListener('input', e => {
+  paintBrush = parseInt(e.target.value);
+  document.getElementById('paintBrushVal').textContent = paintBrush;
+});
+
+// Init
+loadShape('sphere');
+</script>
+</body>
+</html>
